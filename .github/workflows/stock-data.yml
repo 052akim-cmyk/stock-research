@@ -1,0 +1,39 @@
+name: Stock Data Collection
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 23 * * 0-4'
+    - cron: '30 7 * * 1-5'
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Collect stock data
+        run: |
+          HOUR=$(TZ=Asia/Seoul date +%H)
+          if [ "$HOUR" -lt 12 ]; then
+            python collect.py us
+          else
+            python collect.py kr
+          fi
+      - name: Upload CSV results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-data-${{ github.run_id }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
