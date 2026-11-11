@@ -26,17 +26,48 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
-      - name: Collect stock data
+      - name: Verify checked-out source
         run: |
           set -euo pipefail
-          python -u collect.py ${{ matrix.market }}
-          test -n "$(find reports -maxdepth 1 -name '*.csv' -print -quit)"
-          ls -lh reports/
+          echo "COMMIT=${GITHUB_SHA}"
+          echo "BRANCH=${GITHUB_REF}"
+          echo "MARKET=${{ matrix.market }}"
+          pwd
+          ls -l collect.py
+          sha256sum collect.py
+          python -m py_compile collect.py
+          python - <<'PYCODE'
+          from pathlib import Path
+          s = Path('collect.py').read_text(encoding='utf-8')
+          for marker in ['def us_universe():', 'def american():', 'US_LISTING_FETCH', 'US_FATAL_ERROR']:
+              print(f'SOURCE_CHECK {marker}: {marker in s}', flush=True)
+          print('SOURCE_TAIL_BEGIN', flush=True)
+          print('\n'.join(s.splitlines()[-22:]), flush=True)
+          print('SOURCE_TAIL_END', flush=True)
+          PYCODE
+      - name: Collect stock data
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "COMMAND python -u -X faulthandler collect.py ${{ matrix.market }}"
+          python -u -X faulthandler collect.py ${{ matrix.market }} 2>&1 | tee "run-${{ matrix.market }}.log"
+          status=${PIPESTATUS[0]}
+          echo "PYTHON_EXIT_CODE=$status"
+          echo "REPORTS_BEGIN"
+          ls -lah reports/ || true
+          echo "REPORTS_END"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if ! find reports -maxdepth 1 -name '*.csv' -print -quit | grep -q .; then
+            echo "ERROR: No CSV produced"
+            exit 1
+          fi
       - name: Upload CSV results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: stock-data-${{ matrix.market }}-${{ github.run_id }}
-          path: reports/*.csv
+          path: |
+            reports/*.csv
+            run-${{ matrix.market }}.log
           if-no-files-found: warn
           retention-days: 30
