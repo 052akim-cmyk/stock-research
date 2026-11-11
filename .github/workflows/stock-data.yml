@@ -8,7 +8,7 @@ on:
     - cron: '30 7 * * 1-5'   # 16:30 KST Mon-Fri
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   collect:
@@ -71,3 +71,60 @@ jobs:
             run-${{ matrix.market }}.log
           if-no-files-found: warn
           retention-days: 30
+
+  publish:
+    name: Publish latest CSV reports
+    needs: collect
+    if: ${{ needs.collect.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: publish-stock-reports
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Download both market artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: stock-data-*-${{ github.run_id }}
+          path: downloaded
+          merge-multiple: true
+      - name: Publish dated and latest CSVs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          shopt -s nullglob
+          files=(downloaded/*.csv)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "ERROR: No CSV artifacts downloaded"
+            exit 1
+          fi
+          cp "${files[@]}" reports/
+          python - <<'PYCODE'
+          from pathlib import Path
+          import shutil
+          import re
+          root = Path('reports')
+          for market in ('kr', 'us'):
+              for category in ('all', 'volume_candidates', 'momentum_candidates'):
+                  candidates = sorted(
+                      p for p in root.glob(f'{market}_{category}_*.csv')
+                      if re.fullmatch(rf'{market}_{category}_[0-9]{{8}}\.csv', p.name)
+                  )
+                  if not candidates:
+                      raise SystemExit(f'Missing CSV: {market}_{category}')
+                  shutil.copyfile(candidates[-1], root / f'{market}_{category}_latest.csv')
+          PYCODE
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/*.csv
+          if git diff --cached --quiet; then
+            echo "No report changes"
+            exit 0
+          fi
+          git commit -m "Publish latest stock screening CSVs"
+          git pull --rebase origin main
+          git push origin HEAD:main
