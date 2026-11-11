@@ -120,5 +120,13 @@ def american():
     df.to_csv(OUT/f'us_watch_{datetime.now(KST):%Y%m%d}.csv',index=False,encoding='utf-8-sig')
     print(df.to_string(index=False))
     print('SUCCESS: US WATCHLIST ONLY. NOT an all-market scan.')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("market", choices=["kr", "us"])
+    args = parser.parse_args()
 
+    if args.market == "kr":
+        korean()
+    else:
+        american()
 
