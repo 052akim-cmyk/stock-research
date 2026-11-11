@@ -1,6 +1,8 @@
 """Daily stock screening. No broker execution or real-time quote feed."""
 import argparse
 import time
+import io
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -76,13 +78,84 @@ def korean():
                     volume = int(last['Volume'])
                     span = high - low
                     ticker = symbol_to_ticker[symbol]
-                    # Approximate turnover: closing price x volume; NOT official KRX traded value.
-                    rows.append({'ticker': ticker, 'name': name_by_ticker.get(ticker, ''),
-                                 'market': market_by_ticker[ticker], 'date': last_date.isoformat(),
-                                 'open': op, 'high': high, 'low': low, 'close': close,
-                                 'volume': volume,
+                                print(f'BATCH_ERROR {offset // 50 + 1}: {type(exc).__name__}: {exc}', flush=True)
+        print(f'PROGRESS {min(offset + 50, len(symbols))}/{len(symbols)}, valid={len(rows)}', flush=True)
+
+    save_results(rows, 'kr', len(symbols), failed_batches)
+
+
+def us_universe():
+    """NASDAQ Trader official symbol directory: NASDAQ + other listed US securities."""
+    sources = [
+        ('nasdaqlisted', 'https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt', 'Symbol', 'ETF'),
+        ('otherlisted', 'https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt', 'ACT Symbol', 'ETF'),
+    ]
+    symbols = {}
+    for kind, url, sym_col, etf_col in sources:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 stock-research/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            content = response.read().decode('utf-8-sig', errors='replace')
+        frame = pd.read_csv(io.StringIO(content), sep='|', dtype=str)
+        if sym_col not in frame.columns or etf_col not in frame.columns:
+            raise RuntimeError(f'Unexpected {kind} directory columns: {list(frame.columns)}')
+        for _, row in frame.iterrows():
+            sym = str(row[sym_col]).strip()
+            if not sym or sym.startswith('File Creation Time') or row.get('Test Issue', 'N') == 'Y':
+                continue
+            if row.get(etf_col) == 'Y':
+                continue
+            # Yahoo convention for class shares (BRK.B -> BRK-B).
+            yf_sym = sym.replace('.', '-')
+            if not yf_sym.replace('-', '').isalnum():
+                continue
+            symbols[yf_sym] = sym
+    if len(symbols) < 2000:
+        raise RuntimeError(f'US listing suspiciously small: {len(symbols)}')
+    return symbols
+
+
+def american():
+    symbol_map = us_universe()
+    symbols = list(symbol_map)
+    print(f'US_UNIVERSE {len(symbols)}', flush=True)
+    today = datetime.now(KST).date()
+    start = (today - timedelta(days=55)).isoformat()
+    end = (today + timedelta(days=1)).isoformat()
+    rows = []
+    failed_batches = 0
+    for offset in range(0, len(symbols), 50):
+        batch = symbols[offset:offset + 50]
+        try:
+            data = yf.download(batch, start=start, end=end, interval='1d',
+                               auto_adjust=False, group_by='ticker', threads=False,
+                               progress=False, timeout=25)
+            if data is None or data.empty:
+                raise ValueError('empty batch')
+            for symbol in batch:
+                try:
+                    if isinstance(data.columns, pd.MultiIndex):
+                        frame = data[symbol].copy() if symbol in data.columns.get_level_values(0) else pd.DataFrame()
+                    else:
+                        frame = data.copy() if len(batch) == 1 else pd.DataFrame()
+                    if frame.empty or not {'Open', 'High', 'Low', 'Close', 'Volume'}.issubset(frame.columns):
+                        continue
+                    frame = frame.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'])
+                    frame = frame[frame['Volume'] > 0].sort_index()
+                    if len(frame) < 21:
+                        continue
+                    last, prev = frame.iloc[-1], frame.iloc[-2]
+                    history = frame['Volume'].iloc[-21:-1]
+                    if len(history) != 20 or history.mean() <= 0 or prev['Close'] <= 0:
+                        continue
+                    last_date = pd.Timestamp(frame.index[-1]).date()
+                    high, low, op, close = (float(last[k]) for k in ('High', 'Low', 'Open', 'Close'))
+                    volume = int(last['Volume'])
+                    span = high - low
+                    rows.append({'ticker': symbol_map[symbol], 'name': '', 'market': 'US',
+                                 'date': last_date.isoformat(), 'open': op, 'high': high,
+                                 'low': low, 'close': close, 'volume': volume,
                                  'volume_multiple_20d': round(volume / float(history.mean()), 2),
-                                 'turnover_krw': round(close * volume),
+                                 'turnover_usd': round(close * volume),
                                  'turnover_source': 'estimated_close_times_volume',
                                  'change_pct': round((close / float(prev['Close']) - 1) * 100, 2),
                                  'close_location_pct': round((close - low) / span * 100, 1) if span > 0 else None,
@@ -93,4 +166,39 @@ def korean():
         except Exception as exc:
             failed_batches += 1
             print(f'BATCH_ERROR {offset // 50 + 1}: {type(exc).__name__}: {exc}', flush=True)
-        print(f'PROGRESS {min(offset + 50, len(symbols))}/{len(symbols)}, valid={len(rows)}', flush=True)
+        print(f'PROGRESS US {min(offset + 50, len(symbols))}/{len(symbols)}, valid={len(rows)}', flush=True)
+    save_results(rows, 'us', len(symbols), failed_batches)
+
+
+def save_results(rows, market, universe_count, failed_batches):
+    if not rows:
+        raise RuntimeError(f'{market.upper()}: no valid records')
+    df = pd.DataFrame(rows)
+    coverage = len(df) / universe_count
+    print(f'COVERAGE {market.upper()} {len(df)}/{universe_count} ({coverage:.1%}), failed_batches={failed_batches}', flush=True)
+    if coverage < 0.65 or failed_batches > 0:
+        raise RuntimeError(f'{market.upper()}: incomplete collection, no potentially misleading report published')
+    df = df.sort_values('date', ascending=False)
+    latest = df['date'].iloc[0]
+    df = df[df['date'] == latest].copy()
+    if len(df) / universe_count < 0.60:
+        raise RuntimeError(f'{market.upper()}: latest-date coverage too low: {len(df)}/{universe_count}')
+    turnover_col = 'turnover_krw' if market == 'kr' else 'turnover_usd'
+    stamp = latest.replace('-', '')
+    df.sort_values(turnover_col, ascending=False).to_csv(OUT / f'{market}_all_{stamp}.csv', index=False, encoding='utf-8-sig')
+    quiet = df[(df.volume_multiple_20d >= 3) & df.change_pct.between(-3, 3) &
+               (df[turnover_col] >= (5_000_000_000 if market == 'kr' else 5_000_000))]
+    momentum = df[(df.change_pct > 3) & (df.close_location_pct >= 65)]
+    quiet.sort_values('volume_multiple_20d', ascending=False).to_csv(OUT / f'{market}_volume_candidates_{stamp}.csv', index=False, encoding='utf-8-sig')
+    momentum.sort_values(turnover_col, ascending=False).to_csv(OUT / f'{market}_momentum_candidates_{stamp}.csv', index=False, encoding='utf-8-sig')
+    print(f'SUCCESS {market.upper()}: {len(df)} tickers, date={latest}, quiet={len(quiet)}, momentum={len(momentum)}', flush=True)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('market', choices=['kr', 'us'])
+    args = parser.parse_args()
+    if args.market == 'kr':
+        korean()
+    else:
+        american()
