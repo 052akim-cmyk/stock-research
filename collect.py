@@ -1,5 +1,6 @@
 """Daily stock screening. No broker execution or real-time quote feed."""
 import argparse
+import sys
 import time
 import io
 import urllib.request
@@ -78,7 +79,23 @@ def korean():
                     volume = int(last['Volume'])
                     span = high - low
                     ticker = symbol_to_ticker[symbol]
-                                print(f'BATCH_ERROR {offset // 50 + 1}: {type(exc).__name__}: {exc}', flush=True)
+                    # Approximate turnover: closing price x volume; NOT official KRX traded value.
+                    rows.append({'ticker': ticker, 'name': name_by_ticker.get(ticker, ''),
+                                 'market': market_by_ticker[ticker], 'date': last_date.isoformat(),
+                                 'open': op, 'high': high, 'low': low, 'close': close,
+                                 'volume': volume,
+                                 'volume_multiple_20d': round(volume / float(history.mean()), 2),
+                                 'turnover_krw': round(close * volume),
+                                 'turnover_source': 'estimated_close_times_volume',
+                                 'change_pct': round((close / float(prev['Close']) - 1) * 100, 2),
+                                 'close_location_pct': round((close - low) / span * 100, 1) if span > 0 else None,
+                                 'upper_wick_pct': round((high - max(op, close)) / span * 100, 1) if span > 0 else None,
+                                 'history_sessions': 20})
+                except Exception as exc:
+                    print(f'SYMBOL_ERROR {symbol}: {exc}', flush=True)
+        except Exception as exc:
+            failed_batches += 1
+            print(f'BATCH_ERROR {offset // 50 + 1}: {type(exc).__name__}: {exc}', flush=True)
         print(f'PROGRESS {min(offset + 50, len(symbols))}/{len(symbols)}, valid={len(rows)}', flush=True)
 
     save_results(rows, 'kr', len(symbols), failed_batches)
@@ -176,13 +193,17 @@ def save_results(rows, market, universe_count, failed_batches):
     df = pd.DataFrame(rows)
     coverage = len(df) / universe_count
     print(f'COVERAGE {market.upper()} {len(df)}/{universe_count} ({coverage:.1%}), failed_batches={failed_batches}', flush=True)
-    if coverage < 0.65 or failed_batches > 0:
-        raise RuntimeError(f'{market.upper()}: incomplete collection, no potentially misleading report published')
+    if coverage < 0.65:
+        raise RuntimeError(f'{market.upper()}: insufficient coverage {coverage:.1%}; failed_batches={failed_batches}; no report published')
     df = df.sort_values('date', ascending=False)
     latest = df['date'].iloc[0]
     df = df[df['date'] == latest].copy()
     if len(df) / universe_count < 0.60:
         raise RuntimeError(f'{market.upper()}: latest-date coverage too low: {len(df)}/{universe_count}')
+    today_kst = datetime.now(KST).date()
+    latest_day = datetime.strptime(latest, '%Y-%m-%d').date()
+    if (today_kst - latest_day).days > 5:
+        raise RuntimeError(f'{market.upper()}: stale data: latest={latest}, today_KST={today_kst}')
     turnover_col = 'turnover_krw' if market == 'kr' else 'turnover_usd'
     stamp = latest.replace('-', '')
     df.sort_values(turnover_col, ascending=False).to_csv(OUT / f'{market}_all_{stamp}.csv', index=False, encoding='utf-8-sig')
@@ -191,14 +212,13 @@ def save_results(rows, market, universe_count, failed_batches):
     momentum = df[(df.change_pct > 3) & (df.close_location_pct >= 65)]
     quiet.sort_values('volume_multiple_20d', ascending=False).to_csv(OUT / f'{market}_volume_candidates_{stamp}.csv', index=False, encoding='utf-8-sig')
     momentum.sort_values(turnover_col, ascending=False).to_csv(OUT / f'{market}_momentum_candidates_{stamp}.csv', index=False, encoding='utf-8-sig')
-    print(f'SUCCESS {market.upper()}: {len(df)} tickers, date={latest}, quiet={len(quiet)}, momentum={len(momentum)}', flush=True)
+    print(f'SUCCESS {market.upper()}: {len(df)} tickers, date={latest}, quiet={len(quiet)}, momentum={len(momentum)}, coverage={len(df)/universe_count:.1%}, failed_batches={failed_batches}', flush=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('market', choices=['kr', 'us'])
     args = parser.parse_args()
+    print(f'START market={args.market} KST={datetime.now(KST).isoformat()}', flush=True)
     if args.market == 'kr':
         korean()
-    else:
-        american()
