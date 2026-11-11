@@ -1,0 +1,3 @@
+﻿ticker,name,market,date,open,high,low,close,volume,volume_multiple_20d,turnover_krw,turnover_source,change_pct,close_location_pct,upper_wick_pct,history_sessions
+272450,진에어,KOSPI,2026-11-11,7990.0,8490.0,7700.0,8180.0,7950426,10.28,65034484680,estimated_close_times_volume,2.38,60.8,39.2,20
+014950,삼익제약,KOSDAQ,2026-11-11,8970.0,9500.0,8360.0,8540.0,7000498,3.34,59784252920,estimated_close_times_volume,2.52,15.8,46.5,20
