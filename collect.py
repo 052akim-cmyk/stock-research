@@ -102,6 +102,30 @@ def korean():
     save_results(rows, 'kr', len(symbols), failed_batches)
 
 
+def us_universe():
+    """NASDAQ Trader official symbol directory: NASDAQ + other listed US securities."""
+    sources = [
+        ('nasdaqlisted', 'https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt', 'Symbol', 'ETF'),
+        ('otherlisted', 'https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt', 'ACT Symbol', 'ETF'),
+    ]
+    symbols = {}
+    for kind, url, sym_col, etf_col in sources:
+        print(f'US_LISTING_FETCH source={kind} url={url}', flush=True)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 stock-research/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            content = response.read().decode('utf-8-sig', errors='replace')
+        print(f'US_LISTING_RECEIVED source={kind} bytes={len(content)}', flush=True)
+        frame = pd.read_csv(io.StringIO(content), sep='|', dtype=str)
+        if sym_col not in frame.columns or etf_col not in frame.columns:
+            raise RuntimeError(f'Unexpected {kind} directory columns: {list(frame.columns)}')
+        for _, row in frame.iterrows():
+            sym = str(row[sym_col]).strip()
+            if not sym or sym.startswith('File Creation Time') or row.get('Test Issue', 'N') == 'Y':
+                continue
+            if row.get(etf_col) == 'Y':
+                continue
+            # Yahoo convention for class shares (BRK.B -> BRK-B).
+            yf_sym = sym.replace('.', '-')
             if not yf_sym.replace('-', '').isalnum():
                 continue
             symbols[yf_sym] = sym
@@ -184,30 +208,6 @@ def save_results(rows, market, universe_count, failed_batches):
     latest_day = datetime.strptime(latest, '%Y-%m-%d').date()
     if (today_kst - latest_day).days > 5:
         raise RuntimeError(f'{market.upper()}: stale data: latest={latest}, today_KST={today_kst}')
-    turnover_col = 'turnover_krw' if market == 'kr' else 'turnover_usd'
-    stamp = latest.replace('-', '')
-    df.sort_values(turnover_col, ascending=False).to_csv(OUT / f'{market}_all_{stamp}.csv', index=False, encoding='utf-8-sig')
-    quiet = df[(df.volume_multiple_20d >= 3) & df.change_pct.between(-3, 3) &
-               (df[turnover_col] >= (5_000_000_000 if market == 'kr' else 5_000_000))]
-    momentum = df[(df.change_pct > 3) & (df.close_location_pct >= 65)]
-    quiet.sort_values('volume_multiple_20d', ascending=False).to_csv(OUT / f'{market}_volume_candidates_{stamp}.csv', index=False, encoding='utf-8-sig')
-    momentum.sort_values(turnover_col, ascending=False).to_csv(OUT / f'{market}_momentum_candidates_{stamp}.csv', index=False, encoding='utf-8-sig')
-    print(f'SUCCESS {market.upper()}: {len(df)} tickers, date={latest}, quiet={len(quiet)}, momentum={len(momentum)}, coverage={len(df)/universe_count:.1%}, failed_batches={failed_batches}', flush=True)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('market', choices=['kr', 'us'])
-    args = parser.parse_args()
-    print(f'START market={args.market} KST={datetime.now(KST).isoformat()}', flush=True)
-    if args.market == 'kr':
-        korean()
-    else:
-        try:
-            american()
-        except BaseException as exc:
-            print(f'US_FATAL_ERROR type={type(exc).__name__} message={exc!r}', file=sys.stderr, flush=True)
-            traceback.print_exc(file=sys.stderr)
     turnover_col = 'turnover_krw' if market == 'kr' else 'turnover_usd'
     stamp = latest.replace('-', '')
     df.sort_values(turnover_col, ascending=False).to_csv(OUT / f'{market}_all_{stamp}.csv', index=False, encoding='utf-8-sig')
