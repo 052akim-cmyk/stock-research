@@ -93,4 +93,33 @@ def korean():
         OUT / f'kr_volume_candidates_{day}.csv', index=False, encoding='utf-8-sig')
     momentum.sort_values('turnover_krw', ascending=False).to_csv(
         OUT / f'kr_momentum_candidates_{day}.csv', index=False, encoding='utf-8-sig')
-    print(f'SUCCESS KR: date={last_day}, universe={len(allowed)}, valid={len(df)}, '
+ print(quiet.head(10).to_string(index=False))
+
+
+def american():
+    # Preserved original US watchlist behavior (not an all-market scan).
+    symbols = ['SPY','QQQ','DIA','SOXX','EW','XEL','LSCC','NVDA','AMD','USDKRW=X']
+    rows = []
+    for symbol in symbols:
+        try:
+            df = yf.Ticker(symbol).history(period='45d', interval='1d', auto_adjust=False)
+            if len(df)<22:
+                print(f'SKIP {symbol}: insufficient history')
+                continue
+            df=df.dropna(subset=['Close','Volume'])
+            last,prev=df.iloc[-1],df.iloc[-2]
+            avg=df['Volume'].iloc[-21:-1].mean()
+            rows.append({'ticker':symbol,'date':str(df.index[-1].date()),
+                'close':float(last['Close']),'volume':int(last['Volume']),
+                'change_pct':round((float(last['Close'])/float(prev['Close'])-1)*100,2),
+                'volume_multiple_20d':round(float(last['Volume'])/avg,2) if avg else None})
+        except Exception as exc:
+            print(f'ERROR {symbol}: {type(exc).__name__}: {exc}')
+    if len(rows)<6:
+        raise RuntimeError(f'US data validation failed: {len(rows)} tickers')
+    df=pd.DataFrame(rows)
+    df.to_csv(OUT/f'us_watch_{datetime.now(KST):%Y%m%d}.csv',index=False,encoding='utf-8-sig')
+    print(df.to_string(index=False))
+    print('SUCCESS: US WATCHLIST ONLY. NOT an all-market scan.')
+
+
