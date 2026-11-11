@@ -96,13 +96,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p reports
-          shopt -s nullglob
-          files=(downloaded/*.csv)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "ERROR: No CSV artifacts downloaded"
-            exit 1
-          fi
-          cp "${files[@]}" reports/
+          echo "Downloaded files:"
+          find downloaded -type f -print
+          python - <<'PYFILES'
+          from pathlib import Path
+          import shutil
+          files = sorted(Path('downloaded').rglob('*.csv'))
+          if not files:
+              raise SystemExit('ERROR: No CSV files found inside downloaded artifacts')
+          for source in files:
+              destination = Path('reports') / source.name
+              if destination.exists():
+                  raise SystemExit(f'Duplicate CSV filename: {source.name}')
+              shutil.copy2(source, destination)
+              print(f'Copied {source} -> {destination}')
+          PYFILES
           python - <<'PYCODE'
           from pathlib import Path
           import shutil
