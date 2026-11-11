@@ -24,8 +24,8 @@ def korean():
     failures = []
     for d in dates:
         ds = d.strftime('%Y%m%d')
-        try:
-            frame = stock.get_market_ohlcv_by_ticker(ds, market='ALL')
+        try:        
+            frame = stock.get_market_ohlcv_by_ticker(ds, market='KOSPI')            
             if frame is not None and not frame.empty and '거래량' in frame.columns and frame['거래량'].sum() > 0:
                 frame.index = frame.index.astype(str).str.zfill(6)
                 sessions.append((d, frame))
