@@ -1,41 +1,34 @@
 name: Stock Data Collection
-
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 23 * * 0-4'
-    - cron: '30 7 * * 1-5'
-
+    - cron: '0 23 * * 0-4'   # 08:00 KST, Mon-Fri (KR)
+    - cron: '30 7 * * 1-5'   # 16:30 KST, Mon-Fri (US previous session)
 permissions:
   contents: read
-
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        market: [kr, us]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
+          cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Collect stock data
-        run: |
-          HOUR=$(TZ=Asia/Seoul date +%H)
-          if [ "$HOUR" -lt 12 ]; then
-            python collect.py us
-          else
-            python collect.py kr
-          fi
-
+        run: python collect.py ${{ matrix.market }}
       - name: Upload CSV results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stock-data-${{ github.run_id }}
-          path: reports/
+          name: stock-data-${{ matrix.market }}-${{ github.run_id }}
+          path: reports/*.csv
           if-no-files-found: warn
           retention-days: 30
