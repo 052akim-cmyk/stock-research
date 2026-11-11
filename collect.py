@@ -93,7 +93,7 @@ def korean():
         OUT / f'kr_volume_candidates_{day}.csv', index=False, encoding='utf-8-sig')
     momentum.sort_values('turnover_krw', ascending=False).to_csv(
         OUT / f'kr_momentum_candidates_{day}.csv', index=False, encoding='utf-8-sig')
- print(quiet.head(10).to_string(index=False))
+print(f'SUCCESS KR: date={last_day}, universe={len(allowed)}, valid={len(df)}, '
 
 
 def american():
