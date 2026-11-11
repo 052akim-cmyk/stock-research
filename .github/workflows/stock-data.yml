@@ -24,8 +24,12 @@ jobs:
 
       - name: Collect stock data
         run: |
-          python collect.py us
-          python collect.py kr
+          HOUR=$(TZ=Asia/Seoul date +%H)
+          if [ "$HOUR" -lt 12 ]; then
+            python collect.py us
+          else
+            python collect.py kr
+          fi
 
       - name: Upload CSV results
         if: always()
