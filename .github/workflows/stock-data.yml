@@ -49,8 +49,10 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/stock-collection"
+          cd "$RUNNER_TEMP/stock-collection"
           echo "COMMAND python -u -X faulthandler collect.py ${{ matrix.market }}"
-          python -u -X faulthandler collect.py ${{ matrix.market }} 2>&1 | tee "run-${{ matrix.market }}.log"
+          python -u -X faulthandler "$GITHUB_WORKSPACE/collect.py" ${{ matrix.market }} 2>&1 | tee "run-${{ matrix.market }}.log"
           status=${PIPESTATUS[0]}
           echo "PYTHON_EXIT_CODE=$status"
           echo "REPORTS_BEGIN"
@@ -67,8 +69,8 @@ jobs:
         with:
           name: stock-data-${{ matrix.market }}-${{ github.run_id }}
           path: |
-            reports/*.csv
-            run-${{ matrix.market }}.log
+            ${{ runner.temp }}/stock-collection/reports/*.csv
+            ${{ runner.temp }}/stock-collection/run-${{ matrix.market }}.log
           if-no-files-found: warn
           retention-days: 30
 
@@ -90,7 +92,6 @@ jobs:
         with:
           pattern: stock-data-*-${{ github.run_id }}
           path: downloaded
-          merge-multiple: true
       - name: Publish dated and latest CSVs
         shell: bash
         run: |
@@ -104,10 +105,13 @@ jobs:
           files = sorted(Path('downloaded').rglob('*.csv'))
           if not files:
               raise SystemExit('ERROR: No CSV files found inside downloaded artifacts')
+          seen = set()
+          for source in files:
+              if source.name in seen:
+                  raise SystemExit(f'Duplicate CSV filename in artifacts: {source.name}')
+              seen.add(source.name)
           for source in files:
               destination = Path('reports') / source.name
-              if destination.exists():
-                  raise SystemExit(f'Duplicate CSV filename: {source.name}')
               shutil.copy2(source, destination)
               print(f'Copied {source} -> {destination}')
           PYFILES
