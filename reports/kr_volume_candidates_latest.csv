@@ -1,1 +1,8 @@
 ﻿ticker,name,market,date,open,high,low,close,volume,volume_multiple_20d,turnover_krw,turnover_source,change_pct,close_location_pct,upper_wick_pct,history_sessions
+090710,휴림로봇,KOSDAQ,2026-11-25,7430.0,7700.0,6950.0,7490.0,22626437,9.74,169472013130,estimated_close_times_volume,0.81,72.0,28.0,20
+129920,대성하이텍,KOSDAQ,2026-11-25,5860.0,6100.0,5250.0,5570.0,2127199,6.34,11848498430,estimated_close_times_volume,-0.36,37.6,28.2,20
+069510,에스텍,KOSDAQ,2026-11-25,23800.0,26150.0,23800.0,24050.0,922064,6.17,22175639200,estimated_close_times_volume,0.63,10.6,89.4,20
+179530,애드바이오텍,KOSDAQ,2026-11-25,821.0,1029.0,815.0,836.0,6883634,6.06,5754718024,estimated_close_times_volume,2.58,9.8,90.2,20
+439090,마녀공장,KOSDAQ,2026-11-25,17350.0,18800.0,16250.0,16630.0,2104723,5.28,35001543490,estimated_close_times_volume,0.6,14.9,56.9,20
+307950,현대오토에버,KOSPI,2026-11-25,351500.0,386500.0,351500.0,368000.0,246990,3.63,90892320000,estimated_close_times_volume,1.52,47.1,52.9,20
+104620,노랑풍선,KOSDAQ,2026-11-25,4660.0,5250.0,4450.0,4495.0,13723120,3.26,61685424400,estimated_close_times_volume,-0.66,5.6,73.8,20
