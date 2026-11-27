@@ -1,0 +1,5 @@
+﻿ticker,name,market,date,open,high,low,close,volume,volume_multiple_20d,turnover_krw,turnover_source,change_pct,close_location_pct,upper_wick_pct,history_sessions
+335870,윙스풋,KOSDAQ,2026-11-27,6960.0,6960.0,5110.0,5200.0,1178215,11.93,6126718000,estimated_close_times_volume,-2.99,4.9,0.0,20
+250030,진코스텍,KOSDAQ,2026-11-27,11160.0,12000.0,10920.0,11230.0,765917,4.61,8601247910,estimated_close_times_volume,2.84,28.7,71.3,20
+225190,LK삼양,KOSDAQ,2026-11-27,4735.0,4990.0,4400.0,4650.0,3921100,4.37,18233115000,estimated_close_times_volume,1.53,42.4,43.2,20
+417010,나노팀,KOSDAQ,2026-11-27,6470.0,6590.0,6270.0,6420.0,1225757,3.37,7869359940,estimated_close_times_volume,-0.16,46.9,37.5,20
